@@ -1,5 +1,5 @@
-transformers
-torch
-fastapi
-uvicorn
-deta
+fastapi==0.95.1
+uvicorn==0.18.2
+transformers==4.48.0
+torch==2.2.1
+numpy<2.0
