@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y \
     musl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install Python dependencies
+# Copy the requirements file and install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -30,8 +30,8 @@ COPY --from=builder /usr/local/lib/python3.9 /usr/local/lib/python3.9
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /app .
 
-# Expose port 8000
-EXPOSE 8000
+# Expose port 8080 (DigitalOcean often requires this port)
+EXPOSE 8080
 
 # Set the entry point for the container
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
