@@ -12,10 +12,8 @@ RUN apt-get update && apt-get install -y \
     musl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install huggingface-hub for the CLI
+# Install huggingface-hub and Python dependencies
 RUN pip install huggingface-hub
-
-# Copy and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -31,10 +29,7 @@ WORKDIR /app
 # Create a non-root user and group
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Install huggingface-hub in the final image as well
-RUN pip install huggingface-hub
-
-# Copy only necessary parts from the builder stage
+# Copy necessary parts from the builder stage
 COPY --from=builder /usr/local/lib/python3.9 /usr/local/lib/python3.9
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /app .
