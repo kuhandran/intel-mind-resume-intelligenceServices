@@ -36,10 +36,12 @@ class SkillPayload(BaseModel):
 async def lifespan(app: FastAPI):
     global text_generator, ner_model, skill_extractor_model
     
-    # Hugging Face authentication
+    # Hardcoded Hugging Face authentication token (for testing)
+    hf_token = "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"  # Hardcoded for testing purposes
+    
     try:
         # Authenticate with Hugging Face API using the provided token
-        login(token=os.getenv('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'))  # Ensure to set the API token as an environment variable
+        login(token=hf_token)
         logging.info("Successfully logged into Hugging Face.")
     except Exception as e:
         logging.error(f"Error logging into Hugging Face: {e}")
