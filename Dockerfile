@@ -10,17 +10,10 @@ RUN apt-get update && apt-get install -y \
     libffi-dev \
     libssl-dev \
     musl-dev \
-    apt-utils && \
-    rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
-# Install huggingface_hub and Hugging Face CLI
-RUN pip install huggingface_hub
-
-# Create necessary directories for huggingface cache
-RUN mkdir -p /home/appuser/.cache/huggingface && \
-    chown -R appuser:appuser /home/appuser/.cache
-
-# Install other dependencies
+# Install huggingface-hub and Python dependencies
+RUN pip install huggingface-hub
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -36,9 +29,9 @@ WORKDIR /app
 # Create a non-root user and group
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Create necessary directories for huggingface cache
+# Ensure the user and home directory exist before using chown
 RUN mkdir -p /home/appuser/.cache/huggingface && \
-    chown -R appuser:appuser /home/appuser/.cache
+    chown -R appuser:appuser /home/appuser
 
 # Copy necessary parts from the builder stage
 COPY --from=builder /usr/local/lib/python3.9 /usr/local/lib/python3.9
