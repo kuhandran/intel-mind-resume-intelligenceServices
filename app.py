@@ -5,12 +5,14 @@ from pydantic import BaseModel
 from transformers import pipeline
 from typing import List
 from fastapi.middleware.cors import CORSMiddleware
+from huggingface_hub import login
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Paths to local model directories
-MODEL_DIR = 'models'
+# Model identifiers from Hugging Face model hub
+GPT2_MODEL = 'distilgpt2'
+BERT_MODEL = 'dbmdz/bert-large-cased-finetuned-conll03-english'
 
 # Lazy load models
 text_generator = None
@@ -34,20 +36,31 @@ class SkillPayload(BaseModel):
 async def lifespan(app: FastAPI):
     global text_generator, ner_model, skill_extractor_model
     
+    # Hugging Face authentication
+    try:
+        # Authenticate with Hugging Face API using the provided token
+        login(token=os.getenv('HF_API_TOKEN'))  # Ensure to set the API token as an environment variable
+        logging.info("Successfully logged into Hugging Face.")
+    except Exception as e:
+        logging.error(f"Error logging into Hugging Face: {e}")
+        raise HTTPException(status_code=500, detail="Failed to authenticate with Hugging Face")
+
     # Startup logic: Load models
     logging.info("Starting up and loading models...")
-    gpt2_model_path = os.path.join(MODEL_DIR, 'distilgpt2')
-    bert_model_path = os.path.join(MODEL_DIR, 'dbmdz/bert-large-cased-finetuned-conll03-english')
     
-    # Lazy load the models using Hugging Face pipelines
-    text_generator = pipeline('text-generation', model=gpt2_model_path)
-    ner_model = pipeline('ner', model=bert_model_path)
-    
-    # Load a model for skill extraction. We can use a pre-trained model or fine-tune one for skills.
-    # For simplicity, we're using the same NER model as a placeholder for skill extraction.
-    skill_extractor_model = ner_model  # Placeholder for skill extraction
-    
-    logging.info("Models loaded.")
+    try:
+        # Load models from Hugging Face Hub
+        text_generator = pipeline('text-generation', model=GPT2_MODEL)
+        ner_model = pipeline('ner', model=BERT_MODEL)
+
+        # Load a model for skill extraction. We can use a pre-trained model or fine-tune one for skills.
+        # For simplicity, we're using the same NER model as a placeholder for skill extraction.
+        skill_extractor_model = ner_model  # Placeholder for skill extraction
+
+        logging.info("Models loaded successfully.")
+    except Exception as e:
+        logging.error(f"Error loading models: {e}")
+        raise HTTPException(status_code=500, detail="Error loading models")
     
     yield  # Application runs during this pause
     
