@@ -12,10 +12,14 @@ RUN apt-get update && apt-get install -y \
     musl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install huggingface-hub and Python dependencies
-RUN pip install huggingface-hub
+# Install huggingface-hub and Python dependencies in a virtual environment
+RUN python -m venv /env
+RUN /env/bin/pip install --upgrade pip
+RUN /env/bin/pip install huggingface-hub
+
+# Copy requirements file and install dependencies inside the virtual environment
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN /env/bin/pip install --no-cache-dir -r requirements.txt
 
 # Copy the application files
 COPY . .
@@ -34,9 +38,15 @@ COPY --from=builder /usr/local/lib/python3.9 /usr/local/lib/python3.9
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /app .
 
+# Copy the virtual environment from the builder stage
+COPY --from=builder /env /env
+
 # Set permissions and switch to non-root user
 RUN chown -R appuser:appuser /app
 USER appuser
+
+# Set the environment variables to use the virtual environment
+ENV PATH="/env/bin:$PATH"
 
 # Expose port 8080
 EXPOSE 8080
