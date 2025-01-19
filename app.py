@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
     # Hugging Face authentication
     try:
         # Authenticate with Hugging Face API using the provided token
-        login(token=os.getenv('HF_API_TOKEN'))  # Ensure to set the API token as an environment variable
+        login(token=os.getenv('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'))  # Ensure to set the API token as an environment variable
         logging.info("Successfully logged into Hugging Face.")
     except Exception as e:
         logging.error(f"Error logging into Hugging Face: {e}")
