@@ -5,19 +5,19 @@ FROM python:3.9-slim AS builder
 WORKDIR /app
 
 # Install dependencies needed for building
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libffi-dev \
     libssl-dev \
     musl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install huggingface-hub and Python dependencies
-RUN pip install huggingface-hub
+# Upgrade pip to the latest version and install dependencies
+RUN pip install --upgrade pip && pip install huggingface-hub
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the application files
+# Copy the application files (only source code, not unnecessary files)
 COPY . .
 
 # Use a minimal final image
@@ -27,16 +27,16 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Create a non-root user and group
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-
-# Ensure the user and home directory exist before using chown
-RUN mkdir -p /home/appuser/.cache/huggingface && \
+RUN groupadd -r appuser && useradd -r -g appuser appuser && \
+    mkdir -p /home/appuser/.cache/huggingface && \
     chown -R appuser:appuser /home/appuser
 
-# Copy necessary parts from the builder stage
+# Copy only necessary parts from the builder stage
 COPY --from=builder /usr/local/lib/python3.9 /usr/local/lib/python3.9
 COPY --from=builder /usr/local/bin /usr/local/bin
-COPY --from=builder /app .
+
+# Copy application files from builder stage, excluding unnecessary files like caches
+COPY --from=builder /app /app
 
 # Set permissions and switch to non-root user
 RUN chown -R appuser:appuser /app

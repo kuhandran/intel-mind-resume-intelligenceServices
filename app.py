@@ -1,13 +1,11 @@
 import logging
-import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from transformers import pipeline, AutoTokenizer, AutoModelForTokenClassification
-from typing import List
+from typing import List, AsyncGenerator
 from fastapi.middleware.cors import CORSMiddleware
 from huggingface_hub import login
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -22,9 +20,6 @@ CACHE_DIR = './cache'
 # Lazy load models
 text_generator = None
 ner_model = None
-skill_extractor_model = None
-
-STOP_WORDS = {'a', 'the', 'is', 'in', 'on', 'and'}
 
 class TextPayload(BaseModel):
     text: str
@@ -37,54 +32,43 @@ class LocationPayload(BaseModel):
 class SkillPayload(BaseModel):
     text: str
 
-# Define lifespan context manager to load and unload models
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    global text_generator, ner_model, skill_extractor_model
+    global text_generator, ner_model
 
-    # Hardcoded Hugging Face authentication token (for testing)
     hf_token = "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"
-
     try:
-        # Authenticate with Hugging Face API using the provided token
         login(token=hf_token)
         logging.info("Successfully logged into Hugging Face.")
     except Exception as e:
         logging.error(f"Error logging into Hugging Face: {e}")
         raise HTTPException(status_code=500, detail="Failed to authenticate with Hugging Face")
 
-    # Startup logic: Load models
     logging.info("Starting up and loading models...")
 
     try:
-        # Load models from Hugging Face Hub with device set to CPU and specified cache directory
+        # Load text generator model from Hugging Face Hub
         text_generator = pipeline('text-generation', model=GPT2_MODEL, device=-1)
         
-        # Load NER model and tokenizer separately
+        # Load NER model and tokenizer
         tokenizer = AutoTokenizer.from_pretrained(BERT_MODEL, cache_dir=CACHE_DIR)
         model = AutoModelForTokenClassification.from_pretrained(BERT_MODEL, cache_dir=CACHE_DIR)
         ner_model = pipeline('ner', model=model, tokenizer=tokenizer, device=-1)
-        
-        skill_extractor_model = ner_model  # Placeholder for skill extraction
 
         logging.info("Models loaded successfully.")
     except Exception as e:
         logging.error(f"Error loading models: {e}")
         raise HTTPException(status_code=500, detail="Error loading models")
 
-    yield  # Application runs during this pause
+    yield
 
-    # Shutdown logic: Clean up resources
     logging.info("Shutting down, cleaning up resources...")
     text_generator = None
     ner_model = None
-    skill_extractor_model = None
     logging.info("Cleanup complete.")
 
-# Initialize FastAPI with lifespan function
 app = FastAPI(lifespan=lifespan)
 
-# Add CORS middleware to allow all origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -109,7 +93,7 @@ async def extract_locations(payload: LocationPayload):
         logging.info(f"Request to extract locations: {payload.text}")
         ner_results = ner_model(payload.text)
         locations = [result['word'] for result in ner_results if result['entity'] in ['B-LOC', 'I-LOC']]
-        filtered_locations = [location for location in locations if location.lower() in [x.lower() for x in payload.countries_list + payload.cities_list]]
+        filtered_locations = [location for location in locations if location.lower() in map(str.lower, payload.countries_list + payload.cities_list)]
         return {"locations": filtered_locations}
     except Exception as e:
         logging.error(f"Error extracting locations: {e}")
@@ -119,7 +103,7 @@ async def extract_locations(payload: LocationPayload):
 async def extract_skills(payload: SkillPayload):
     try:
         logging.info(f"Request to extract skills: {payload.text}")
-        ner_results = skill_extractor_model(payload.text)
+        ner_results = ner_model(payload.text)
         skills = [result['word'] for result in ner_results if result['entity'] in ['B-MISC', 'I-MISC']]
         return {"skills": skills}
     except Exception as e:
