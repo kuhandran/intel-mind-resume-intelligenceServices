@@ -1,4 +1,4 @@
-# Transformer LLM Services
+# intel-mind-resume-intelligenceServices
 
 This FastAPI app uses Hugging Face models to provide text generation and named entity recognition (NER) services.
 
