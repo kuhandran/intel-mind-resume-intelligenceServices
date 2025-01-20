@@ -2,10 +2,12 @@ import logging
 import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from transformers import pipeline
+from transformers import pipeline, AutoTokenizer, AutoModelForTokenClassification
 from typing import List
 from fastapi.middleware.cors import CORSMiddleware
 from huggingface_hub import login
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -36,7 +38,8 @@ class SkillPayload(BaseModel):
     text: str
 
 # Define lifespan context manager to load and unload models
-async def lifespan(app: FastAPI):
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global text_generator, ner_model, skill_extractor_model
 
     # Hardcoded Hugging Face authentication token (for testing)
@@ -55,8 +58,13 @@ async def lifespan(app: FastAPI):
 
     try:
         # Load models from Hugging Face Hub with device set to CPU and specified cache directory
-        text_generator = pipeline('text-generation', model=GPT2_MODEL, device=-1, cache_dir=CACHE_DIR)
-        ner_model = pipeline('ner', model=BERT_MODEL, device=-1, cache_dir=CACHE_DIR)
+        text_generator = pipeline('text-generation', model=GPT2_MODEL, device=-1)
+        
+        # Load NER model and tokenizer separately
+        tokenizer = AutoTokenizer.from_pretrained(BERT_MODEL, cache_dir=CACHE_DIR)
+        model = AutoModelForTokenClassification.from_pretrained(BERT_MODEL, cache_dir=CACHE_DIR)
+        ner_model = pipeline('ner', model=model, tokenizer=tokenizer, device=-1)
+        
         skill_extractor_model = ner_model  # Placeholder for skill extraction
 
         logging.info("Models loaded successfully.")
