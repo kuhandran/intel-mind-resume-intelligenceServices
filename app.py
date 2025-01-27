@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Model identifiers from Hugging Face model hub
-GPTJ_MODEL = 'EleutherAI/gpt-j-6B'
+GPTJ_MODEL = 'EleutherAI/gpt-neo-1.3B'
 BERT_MODEL = 'dbmdz/bert-large-cased-finetuned-conll03-english'
 
 # Cache directory to manage model storage
