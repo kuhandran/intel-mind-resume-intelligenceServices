@@ -1,7 +1,7 @@
 import logging
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
+from transformers import pipeline, AutoTokenizer, AutoModelForTokenClassification
 from typing import List, AsyncGenerator
 from fastapi.middleware.cors import CORSMiddleware
 from huggingface_hub import login
@@ -52,10 +52,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Load text generation model from Hugging Face Hub (T5-small)
         text_generator = pipeline('text2text-generation', model=T5_MODEL, device=-1)
 
-        # Load NER model and tokenizer
+        # Load NER model and tokenizer (corrected to AutoModelForTokenClassification)
         tokenizer = AutoTokenizer.from_pretrained(BERT_MODEL, cache_dir=CACHE_DIR)
-        model = AutoModelForSeq2SeqLM.from_pretrained(BERT_MODEL, cache_dir=CACHE_DIR)
-        ner_model = pipeline('ner', model=model, tokenizer=tokenizer, device=-1)
+        ner_model = AutoModelForTokenClassification.from_pretrained(BERT_MODEL, cache_dir=CACHE_DIR)
+
+        # Use the NER pipeline
+        ner_pipeline = pipeline('ner', model=ner_model, tokenizer=tokenizer, device=-1)
 
         logging.info("Models loaded successfully.")
     except Exception as e:
@@ -99,7 +101,7 @@ async def extract_locations(payload: LocationPayload):
     try:
         logging.info(f"Request to extract locations: {payload.text}")
         # Extract named entities
-        ner_results = ner_model(payload.text)
+        ner_results = ner_pipeline(payload.text)
         locations = [result['word'] for result in ner_results if result['entity'] in ['B-LOC', 'I-LOC']]
         # Filter locations based on provided countries and cities list
         filtered_locations = [location for location in locations if location.lower() in map(str.lower, payload.countries_list + payload.cities_list)]
@@ -114,7 +116,7 @@ async def extract_skills(payload: SkillPayload):
     try:
         logging.info(f"Request to extract skills: {payload.text}")
         # Extract named entities
-        ner_results = ner_model(payload.text)
+        ner_results = ner_pipeline(payload.text)
         skills = [result['word'] for result in ner_results if result['entity'] in ['B-MISC', 'I-MISC']]
         return {"skills": skills}
     except Exception as e:
