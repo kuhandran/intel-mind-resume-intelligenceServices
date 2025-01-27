@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Model identifiers from Hugging Face model hub
-GPT2_MODEL = 'distilgpt2'
+GPTJ_MODEL = 'EleutherAI/gpt-j-6B'
 BERT_MODEL = 'dbmdz/bert-large-cased-finetuned-conll03-english'
 
 # Cache directory to manage model storage
@@ -47,8 +47,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logging.info("Starting up and loading models...")
 
     try:
-        # Load text generator model from Hugging Face Hub
-        text_generator = pipeline('text-generation', model=GPT2_MODEL, device=-1)
+        # Load text generation model from Hugging Face Hub (GPT-J)
+        text_generator = pipeline('text-generation', model=GPTJ_MODEL, device=-1)
         
         # Load NER model and tokenizer
         tokenizer = AutoTokenizer.from_pretrained(BERT_MODEL, cache_dir=CACHE_DIR)
@@ -69,12 +69,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(lifespan=lifespan)
 
+# CORS middleware setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # You can specify specific domains here
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # You can limit methods to GET, POST, etc.
+    allow_headers=["*"],  # You can specify specific headers here
 )
 
 @app.post("/generate_text/")
@@ -109,3 +110,6 @@ async def extract_skills(payload: SkillPayload):
     except Exception as e:
         logging.error(f"Error extracting skills: {e}")
         raise HTTPException(status_code=500, detail="Error extracting skills")
+
+# Run the app with uvicorn for local development:
+# uvicorn main:app --reload
