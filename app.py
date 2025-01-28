@@ -1,25 +1,27 @@
 import logging
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from transformers import pipeline, AutoTokenizer, AutoModelForTokenClassification
+from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
 from typing import List, AsyncGenerator
 from fastapi.middleware.cors import CORSMiddleware
 from huggingface_hub import login
 from contextlib import asynccontextmanager
+import spacy
+import torch
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Model identifiers from Hugging Face model hub
-T5_MODEL = 't5-small'  # Using T5-small for text generation
-BERT_MODEL = 'dbmdz/bert-large-cased-finetuned-conll03-english'  # BERT model for NER
+GPT_MODEL = 'gpt2'  # Using GPT-2 for text generation
+SPACY_MODEL = 'en_core_web_sm'  # spaCy model for NER
 
 # Cache directory to manage model storage
 CACHE_DIR = './cache'
 
 # Lazy load models
 text_generator = None
-ner_model = None
+nlp = None
 
 # Pydantic models for request payloads
 class TextPayload(BaseModel):
@@ -36,7 +38,7 @@ class SkillPayload(BaseModel):
 # Asynchronous context manager for managing model loading and cleanup
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    global text_generator, ner_model
+    global text_generator, nlp
 
     hf_token = "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"  # Your Hugging Face token
     try:
@@ -49,15 +51,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logging.info("Starting up and loading models...")
 
     try:
-        # Load text generation model from Hugging Face Hub (T5-small)
-        text_generator = pipeline('text2text-generation', model=T5_MODEL, device=-1)
+        # Load text generation model from Hugging Face Hub (GPT-2)
+        tokenizer = AutoTokenizer.from_pretrained(GPT_MODEL, cache_dir=CACHE_DIR)
+        model = AutoModelForCausalLM.from_pretrained(GPT_MODEL, cache_dir=CACHE_DIR)
+        text_generator = pipeline('text-generation', model=model, tokenizer=tokenizer, device=0 if torch.cuda.is_available() else -1)
 
-        # Load NER model and tokenizer (corrected to AutoModelForTokenClassification)
-        tokenizer = AutoTokenizer.from_pretrained(BERT_MODEL, cache_dir=CACHE_DIR)
-        ner_model = AutoModelForTokenClassification.from_pretrained(BERT_MODEL, cache_dir=CACHE_DIR)
-
-        # Use the NER pipeline
-        ner_pipeline = pipeline('ner', model=ner_model, tokenizer=tokenizer, device=-1)
+        # Load spaCy model for NER
+        nlp = spacy.load(SPACY_MODEL)
 
         logging.info("Models loaded successfully.")
     except Exception as e:
@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     logging.info("Shutting down, cleaning up resources...")
     text_generator = None
-    ner_model = None
+    nlp = None
     logging.info("Cleanup complete.")
 
 # FastAPI app setup
@@ -83,26 +83,33 @@ app.add_middleware(
     allow_headers=["*"],  # You can specify specific headers here
 )
 
-# Endpoint for text generation using T5
+# Endpoint for text generation using GPT-2
 @app.post("/generate_text/")
 async def generate_text(payload: TextPayload):
     try:
         logging.info(f"Request to generate text: {payload.text}")
-        # Prepare input text for T5 and generate text based on the input prompt
-        generated_text = text_generator(f"generate: {payload.text}", max_length=50, num_return_sequences=1)[0]['generated_text']
-        return {"generated_text": generated_text}
+        # Generate text using GPT-2
+        generated_text = text_generator(
+            payload.text,
+            max_length=50,
+            num_return_sequences=1,
+            temperature=0.7,  # Adjust for creativity
+            top_k=50,
+            top_p=0.95,
+        )[0]['generated_text']
+        return {"response": generated_text}
     except Exception as e:
         logging.error(f"Error generating text: {e}")
         raise HTTPException(status_code=500, detail="Error generating text")
 
-# Endpoint for extracting location entities from text (using NER)
+# Endpoint for extracting location entities from text (using spaCy)
 @app.post("/extract_locations/")
 async def extract_locations(payload: LocationPayload):
     try:
         logging.info(f"Request to extract locations: {payload.text}")
-        # Extract named entities
-        ner_results = ner_pipeline(payload.text)
-        locations = [result['word'] for result in ner_results if result['entity'] in ['B-LOC', 'I-LOC']]
+        # Extract named entities using spaCy
+        doc = nlp(payload.text)
+        locations = [ent.text for ent in doc.ents if ent.label_ in ['GPE', 'LOC']]
         # Filter locations based on provided countries and cities list
         filtered_locations = [location for location in locations if location.lower() in map(str.lower, payload.countries_list + payload.cities_list)]
         return {"locations": filtered_locations}
@@ -110,14 +117,14 @@ async def extract_locations(payload: LocationPayload):
         logging.error(f"Error extracting locations: {e}")
         raise HTTPException(status_code=500, detail="Error extracting locations")
 
-# Endpoint for extracting skills from text (using NER)
+# Endpoint for extracting skills from text (using spaCy)
 @app.post("/extract_skills/")
 async def extract_skills(payload: SkillPayload):
     try:
         logging.info(f"Request to extract skills: {payload.text}")
-        # Extract named entities
-        ner_results = ner_pipeline(payload.text)
-        skills = [result['word'] for result in ner_results if result['entity'] in ['B-MISC', 'I-MISC']]
+        # Extract named entities using spaCy
+        doc = nlp(payload.text)
+        skills = [ent.text for ent in doc.ents if ent.label_ in ['SKILL']]  # Add custom labels if needed
         return {"skills": skills}
     except Exception as e:
         logging.error(f"Error extracting skills: {e}")
