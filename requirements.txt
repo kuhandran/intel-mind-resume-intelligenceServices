@@ -1,9 +1,10 @@
 fastapi==0.95.1
 uvicorn==0.18.2
 transformers
-torch==2.2.1
+torch
 numpy<2.0
 huggingface-hub
 spacy==3.7.4
 pydantic
 pandas==1.5.3
+peft
