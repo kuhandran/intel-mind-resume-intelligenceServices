@@ -4,20 +4,18 @@ FROM python:3.9-slim AS builder
 # Set the working directory
 WORKDIR /app
 
-# Install dependencies needed for building
+# Install only necessary build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libffi-dev \
     libssl-dev \
-    musl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip to the latest version and install dependencies
-RUN pip install --upgrade pip && pip install huggingface-hub
+# Upgrade pip and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-# Copy the application files (only source code, not unnecessary files)
+# Copy only necessary application files
 COPY . .
 
 # Use a minimal final image
@@ -32,10 +30,8 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser && \
     chown -R appuser:appuser /home/appuser
 
 # Copy only necessary parts from the builder stage
-COPY --from=builder /usr/local/lib/python3.9 /usr/local/lib/python3.9
+COPY --from=builder /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
-
-# Copy application files from builder stage, excluding unnecessary files like caches
 COPY --from=builder /app /app
 
 # Set permissions and switch to non-root user
