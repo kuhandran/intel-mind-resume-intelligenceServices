@@ -5,5 +5,5 @@ torch==2.2.1
 numpy<2.0
 huggingface-hub
 spacy==3.7.4
-pydantic==1.8.2  # Downgraded version for compatibility
+pydantic
 pandas==1.5.3

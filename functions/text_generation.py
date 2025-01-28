@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from transformers import pipeline
 import re
+from typing import List
 
 # Set up the router for Text Generation API endpoint
 router = APIRouter()
@@ -11,25 +12,32 @@ router = APIRouter()
 class TextPayload(BaseModel):
     text: str
 
+# Pydantic model for response
+class TextResponse(BaseModel):
+    response: str
+
+# Initialize the text generation pipeline outside the route handler
+text_generator = pipeline("text-generation", model="DialoGPT-medium")
+
 # Helper function to extract name from text
 def extract_name(text: str) -> str:
-    match = re.search(r"(?:hi|hello|hey)[, ]+my name is (\w+)", text, re.IGNORECASE)
+    match = re.search(r"(?:hi|hello|hey)[, ]+my name is ([\w\s]+)", text, re.IGNORECASE)
     if match:
-        return match.group(1)
+        return match.group(1).strip()  # Ensure the name is trimmed of extra spaces
     return None
 
 # Endpoint for text generation using DialoGPT-medium
-@router.post("/generate_text/")
-async def generate_text(payload: TextPayload, text_generator: pipeline):
+@router.post("/generate_text/", response_model=TextResponse)
+async def generate_text(payload: TextPayload) -> TextResponse:
     try:
-        logging.info(f"Request to generate text: {payload.text}")
+        logging.info(f"Received text for generation: {payload.text}")
 
         # Extract name from the input text
         name = extract_name(payload.text)
         if name:
             # Generate a personalized welcome message
             welcome_message = f"Hi {name}! Welcome to Intel Mind. How can I assist you today?"
-            return {"response": welcome_message}
+            return TextResponse(response=welcome_message)
         else:
             # Generate text using DialoGPT-medium
             generated_text = text_generator(
@@ -41,7 +49,8 @@ async def generate_text(payload: TextPayload, text_generator: pipeline):
                 top_p=0.95,
                 do_sample=True
             )[0]['generated_text']
-            return {"response": generated_text}
+            logging.info(f"Generated text: {generated_text}")
+            return TextResponse(response=generated_text)
     except Exception as e:
         logging.error(f"Error generating text: {e}")
         raise HTTPException(status_code=500, detail="Error generating text")
