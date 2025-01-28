@@ -1,19 +1,20 @@
 import logging
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from typing import List, AsyncGenerator
 from fastapi.middleware.cors import CORSMiddleware
 from huggingface_hub import login
 from contextlib import asynccontextmanager
 import spacy
 import torch
+import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Model identifiers from Hugging Face model hub
-GPT_MODEL = 'gpt2'  # Using GPT-2 for text generation
+DIALOGPT_MODEL = 'microsoft/DialoGPT-medium'  # Using DialoGPT-medium for text generation
 SPACY_MODEL = 'en_core_web_sm'  # spaCy model for NER
 
 # Cache directory to manage model storage
@@ -51,9 +52,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logging.info("Starting up and loading models...")
 
     try:
-        # Load text generation model from Hugging Face Hub (GPT-2)
-        tokenizer = AutoTokenizer.from_pretrained(GPT_MODEL, cache_dir=CACHE_DIR)
-        model = AutoModelForCausalLM.from_pretrained(GPT_MODEL, cache_dir=CACHE_DIR)
+        # Load text generation model from Hugging Face Hub (DialoGPT-medium)
+        tokenizer = AutoTokenizer.from_pretrained(DIALOGPT_MODEL, cache_dir=CACHE_DIR)
+        model = AutoModelForCausalLM.from_pretrained(DIALOGPT_MODEL, cache_dir=CACHE_DIR)
         text_generator = pipeline('text-generation', model=model, tokenizer=tokenizer, device=0 if torch.cuda.is_available() else -1)
 
         # Load spaCy model for NER
@@ -83,21 +84,41 @@ app.add_middleware(
     allow_headers=["*"],  # You can specify specific headers here
 )
 
-# Endpoint for text generation using GPT-2
+# Helper function to extract name from text
+def extract_name(text: str) -> str:
+    """
+    Extracts a name from the input text using a simple regex pattern.
+    Assumes the input text contains a phrase like "Hi, my name is [Name]".
+    """
+    match = re.search(r"(?:hi|hello|hey)[, ]+my name is (\w+)", text, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return None
+
+# Endpoint for text generation using DialoGPT-medium
 @app.post("/generate_text/")
 async def generate_text(payload: TextPayload):
     try:
         logging.info(f"Request to generate text: {payload.text}")
-        # Generate text using GPT-2
-        generated_text = text_generator(
-            payload.text,
-            max_length=50,
-            num_return_sequences=1,
-            temperature=0.7,  # Adjust for creativity
-            top_k=50,
-            top_p=0.95,
-        )[0]['generated_text']
-        return {"response": generated_text}
+
+        # Extract name from the input text
+        name = extract_name(payload.text)
+        if name:
+            # Generate a personalized welcome message
+            welcome_message = f"Hi {name}! Welcome to Intel Mind. How can I assist you today?"
+            return {"response": welcome_message}
+        else:
+            # Generate text using DialoGPT-medium
+            generated_text = text_generator(
+                payload.text,
+                max_length=50,
+                num_return_sequences=1,
+                temperature=0.7,  # Adjust for creativity
+                top_k=50,
+                top_p=0.95,
+                do_sample=True
+            )[0]['generated_text']
+            return {"response": generated_text}
     except Exception as e:
         logging.error(f"Error generating text: {e}")
         raise HTTPException(status_code=500, detail="Error generating text")
