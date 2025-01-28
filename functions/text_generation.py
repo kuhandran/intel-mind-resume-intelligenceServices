@@ -1,7 +1,7 @@
 import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from transformers import pipeline
+from transformers import GPT2Tokenizer, GPT2LMHeadModel, pipeline
 import re
 from typing import List
 
@@ -17,7 +17,9 @@ class TextResponse(BaseModel):
     response: str
 
 # Initialize the text generation pipeline outside the route handler
-text_generator = pipeline("text-generation", model="DialoGPT-medium")
+tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+model = GPT2LMHeadModel.from_pretrained('gpt2')
+text_generator = pipeline('text-generation', model=model, tokenizer=tokenizer)
 
 # Helper function to extract name from text
 def extract_name(text: str) -> str:
@@ -26,7 +28,7 @@ def extract_name(text: str) -> str:
         return match.group(1).strip()  # Ensure the name is trimmed of extra spaces
     return None
 
-# Endpoint for text generation using DialoGPT-medium
+# Endpoint for text generation using GPT-2
 @router.post("/generate_text/", response_model=TextResponse)
 async def generate_text(payload: TextPayload) -> TextResponse:
     try:
@@ -39,7 +41,7 @@ async def generate_text(payload: TextPayload) -> TextResponse:
             welcome_message = f"Hi {name}! Welcome to Intel Mind. How can I assist you today?"
             return TextResponse(response=welcome_message)
         else:
-            # Generate text using DialoGPT-medium
+            # Generate text using GPT-2 model
             generated_text = text_generator(
                 payload.text,
                 max_length=50,
