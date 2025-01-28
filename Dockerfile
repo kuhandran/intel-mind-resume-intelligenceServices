@@ -4,7 +4,7 @@ FROM python:3.9-slim AS builder
 # Set the working directory
 WORKDIR /app
 
-# Install only necessary build dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libffi-dev \
@@ -15,7 +15,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-# Copy only necessary application files
+# Download the spaCy model
+RUN python -m spacy download en_core_web_sm
+
+# Copy application files
 COPY . .
 
 # Use a minimal final image
