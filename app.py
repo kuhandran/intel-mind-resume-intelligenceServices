@@ -44,22 +44,28 @@ tokenizer = None
 
 # Define file paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TXT_FILE_PATH = os.path.join(BASE_DIR, "../data/cities15000.txt")
-CSV_FILE_PATH = os.path.join(BASE_DIR, "../data/cities.csv")
+TXT_FILE_PATH = os.path.join(BASE_DIR, "data/cities15000.txt")
+CSV_FILE_PATH = os.path.join(BASE_DIR, "data/cities5000.csv")
 
 
 async def convert_txt_to_csv():
     """Asynchronously converts a TXT file to a CSV file."""
+
+    # Check if TXT file exists
     if not os.path.exists(TXT_FILE_PATH):
-        logging.error(f"Error: File not found -> {TXT_FILE_PATH}")
+        logging.error(f"Error: TXT file not found -> {TXT_FILE_PATH}")
         return False
 
     try:
-        async with aiofiles.open(
-            TXT_FILE_PATH, "r", encoding="utf-8"
-        ) as txt_file, aiofiles.open(CSV_FILE_PATH, "w", encoding="utf-8") as csv_file:
+        # Open TXT file asynchronously
+        async with aiofiles.open(TXT_FILE_PATH, "r", encoding="utf-8") as txt_file:
             contents = await txt_file.readlines()
+
+        # Now, write the CSV file synchronously using the csv.writer
+        with open(CSV_FILE_PATH, "w", encoding="utf-8", newline="") as csv_file:
             writer = csv.writer(csv_file, quoting=csv.QUOTE_ALL)
+
+            # Write the header row
             writer.writerow(
                 [
                     "geonameid",
@@ -83,6 +89,8 @@ async def convert_txt_to_csv():
                     "modification date",
                 ]
             )
+
+            # Write the data rows
             for line in contents:
                 data = line.strip().split("\t")
                 if len(data) >= 19:
@@ -90,9 +98,18 @@ async def convert_txt_to_csv():
 
         logging.info(f"CSV successfully created at: {CSV_FILE_PATH}")
         return True
+    except FileNotFoundError:
+        logging.error(f"File not found error while processing: {TXT_FILE_PATH}")
+    except PermissionError:
+        logging.error(
+            f"Permission error while trying to access file: {TXT_FILE_PATH} or {CSV_FILE_PATH}"
+        )
+    except csv.Error as e:
+        logging.error(f"CSV error: {e}")
     except Exception as e:
-        logging.error(f"Error writing CSV: {e}")
-        return False
+        logging.error(f"Unexpected error: {e}")
+
+    return False
 
 
 # Context manager for model loading and cleanup
@@ -210,15 +227,15 @@ async def root():
 
 
 @app.get("/convert")
-def convert():
+async def convert():
     """API endpoint to trigger conversion."""
-    success = convert_txt_to_csv()
-    
+    success = await convert_txt_to_csv()
+
     if success:
         # Log the success messages before returning the response
         logger.info("CSV file created successfully.")
         logger.info(f"CSV file path: {CSV_FILE_PATH}")
-        
+
         return JSONResponse(
             content={
                 "message": "CSV file created successfully.",
@@ -229,8 +246,7 @@ def convert():
     else:
         # Log the error
         logger.error("Failed to create CSV file.")
-        
+
         return JSONResponse(
-            content={"error": "Failed to create CSV file."}, 
-            status_code=500
+            content={"error": "Failed to create CSV file."}, status_code=500
         )
