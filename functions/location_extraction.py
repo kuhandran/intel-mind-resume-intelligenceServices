@@ -4,7 +4,9 @@ import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List
-import os
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
 
 # Set up the router for Location Extraction API endpoint
 router = APIRouter()
@@ -12,84 +14,93 @@ router = APIRouter()
 # Path to the cities5000.csv or cities5000.txt file
 CITIES_FILE_PATH = os.path.join(os.path.dirname(__file__), '../data/cities5000.csv')
 
-
-# Pydantic model for request payload
+# Pydantic models for request & response
 class LocationPayload(BaseModel):
     text: str
 
-# Pydantic model for response
 class LocationResponse(BaseModel):
     locations: List[str]
 
-# Cache cities and countries data at startup
-cities_data = []
+# Global variable to store loaded city data
+cities_data = None
 
-# Function to read data from CSV or TXT file
-def load_city_country_data(file_path: str):
+# Function to load data only when needed
+def load_city_country_data():
     global cities_data
-    try:
-        # Check if the file exists
-        logging.info(f"Loading city data from {file_path}")
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"{file_path} not found")
 
-        # Check file extension to process accordingly
-        file_ext = file_path.split('.')[-1].lower()
+    # If data is already loaded, return early
+    if cities_data is not None:
+        return
+
+    # Check if the file exists before attempting to read
+    if not os.path.exists(CITIES_FILE_PATH):
+        logging.error(f"City data file not found: {CITIES_FILE_PATH}")
+        raise FileNotFoundError(f"City data file not found: {CITIES_FILE_PATH}")
+
+    cities_data = []  # Initialize empty list
+
+    try:
+        logging.info(f"Loading city data from {CITIES_FILE_PATH}")
+        file_ext = CITIES_FILE_PATH.split('.')[-1].lower()
 
         if file_ext == 'csv':
-            with open(file_path, mode='r', encoding='utf-8') as file:
+            with open(CITIES_FILE_PATH, mode='r', encoding='utf-8') as file:
                 reader = csv.reader(file)
                 for row in reader:
-                    city, country = row
-                    cities_data.append((city.lower(), country.lower()))  # Store cities and countries in lowercase
+                    if len(row) >= 2:
+                        city, country = row[:2]
+                        cities_data.append((city.lower(), country.lower()))
         elif file_ext == 'txt':
-            with open(file_path, mode='r', encoding='utf-8') as file:
+            with open(CITIES_FILE_PATH, mode='r', encoding='utf-8') as file:
                 for line in file:
-                    city, country = line.strip().split('\t')  # Assuming tab-separated values
-                    cities_data.append((city.lower(), country.lower()))  # Store cities and countries in lowercase
+                    parts = line.strip().split('\t')  # Assuming tab-separated values
+                    if len(parts) >= 2:
+                        city, country = parts[:2]
+                        cities_data.append((city.lower(), country.lower()))
         else:
             raise ValueError("Unsupported file format. Only CSV and TXT are supported.")
-        
-        logging.info(f"Loaded city data from {file_path}")
+
+        logging.info(f"Successfully loaded {len(cities_data)} city entries.")
 
     except Exception as e:
-        logging.error(f"Error loading cities data from {file_path}: {e}")
-        raise e  # Re-raise the exception to be handled in the API
+        logging.error(f"Error loading cities data: {e}")
+        cities_data = None  # Reset to None to retry on next request
+        raise e
 
-# Helper function to search for cities and countries in the input text
+# Helper function to search for cities in the text
 def search_locations_in_text(text: str) -> List[str]:
+    if cities_data is None:
+        load_city_country_data()  # Load data only when the API is called
+
     found_locations = []
-    text = text.lower()  # Convert text to lowercase for case-insensitive search
+    text = text.lower()
 
     for city, country in cities_data:
-        # Check if the city or country exists in the text
         if city in text or country in text:
-            found_locations.append(f"{city.capitalize()}, {country.capitalize()}")  # Capitalize for readability
+            found_locations.append(f"{city.capitalize()}, {country.capitalize()}")
 
     return found_locations
 
-# Load cities data once at startup (this will now support both CSV and TXT formats)
-load_city_country_data(CITIES_FILE_PATH)
-
-# Endpoint for extracting location entities from text
+# API Endpoint for extracting locations
 @router.post("/extract_locations/", response_model=LocationResponse)
 async def extract_locations(payload: LocationPayload) -> LocationResponse:
     try:
-        logging.info(f"Request to extract locations: {payload.text}")
+        logging.info(f"Processing location extraction request: {payload.text}")
 
-        # Search for cities and countries in the text
+        # Attempt to search locations
         locations = search_locations_in_text(payload.text)
 
         if locations:
             return LocationResponse(locations=locations)
         else:
-            raise HTTPException(status_code=404, detail="No locations found in the text")  # Return error if no locations found
+            raise HTTPException(status_code=404, detail="No locations found in the text")
 
+    except FileNotFoundError as e:
+        logging.error(f"City data file missing: {e}")
+        raise HTTPException(status_code=500, detail="City data file not found on the server")
     except HTTPException as http_exc:
-        # Log the HTTPException with details and raise it again
-        logging.error(f"HTTPException occurred: {http_exc.detail}")
+        logging.error(f"HTTPException: {http_exc.detail}")
         raise http_exc
     except Exception as e:
-        # Log the generic exception details and raise a 500 error
-        logging.error(f"Error while processing request: {e}")
+        logging.error(f"Unexpected error: {e}")
         raise HTTPException(status_code=500, detail="Error extracting locations")
