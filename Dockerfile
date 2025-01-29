@@ -37,6 +37,9 @@ COPY --from=builder /usr/local/lib/python3.9/site-packages /usr/local/lib/python
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /app /app
 
+# Explicitly copy the data folder containing cities5000.csv
+COPY ./data /app/data
+
 # Set permissions and switch to non-root user
 RUN chown -R appuser:appuser /app
 USER appuser

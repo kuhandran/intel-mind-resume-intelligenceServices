@@ -4,12 +4,14 @@ import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List
+import os
 
 # Set up the router for Location Extraction API endpoint
 router = APIRouter()
 
 # Path to the cities5000.csv or cities5000.txt file
-CITIES_FILE_PATH = 'data/cities5000.csv'  # Path to CSV file containing city and country data
+CITIES_FILE_PATH = os.path.join(os.path.dirname(__file__), '../data/cities5000.csv')
+
 
 # Pydantic model for request payload
 class LocationPayload(BaseModel):
