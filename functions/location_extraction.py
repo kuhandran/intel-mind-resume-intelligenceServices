@@ -80,7 +80,7 @@ async def extract_locations(payload: LocationPayload) -> LocationResponse:
         if locations:
             return LocationResponse(locations=locations)
         else:
-            return LocationResponse(locations=["No location found"])
+            raise HTTPException(status_code=404, detail="No locations found in the text")  # Return error if no locations found
 
     except Exception as e:
         logging.error(f"Error while processing request: {e}")
