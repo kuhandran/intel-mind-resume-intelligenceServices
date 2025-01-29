@@ -45,4 +45,4 @@ USER appuser
 EXPOSE 8080
 
 # Set the entry point for the container
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080", "--log-level", "info"]

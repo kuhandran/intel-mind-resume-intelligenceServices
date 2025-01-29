@@ -13,11 +13,19 @@ from functions.text_generation import router as text_gen_router
 from functions.location_extraction import router as loc_extract_router
 from functions.skill_extraction import router as skill_extract_router
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+
+# Configure root logger to show messages in console
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Clear existing handlers
+if logger.hasHandlers():
+    logger.handlers.clear()
+
+# Add console handler
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+logger.addHandler(console_handler)
 
 # Cache directory to manage model storage
 CACHE_DIR = "./cache"
@@ -42,8 +50,8 @@ def load_txt_to_csv():
     logging.getLogger().addHandler(file_handler)
 
     if not os.path.exists(TXT_FILE_PATH):
-        logging.warning(f"TXT file not found at {TXT_FILE_PATH}.")
-        return False
+        logging.error(f"TXT file not found at {TXT_FILE_PATH}.")
+        raise HTTPException(status_code=404, detail=f"TXT file not found at {TXT_FILE_PATH}")
 
     try:
         # First, ensure the data directory exists
@@ -136,17 +144,10 @@ def load_txt_to_csv():
             
             if file_size == 0:
                 logging.error("CSV file was created but is empty!")
-                return False
+                raise HTTPException(status_code=500, detail="CSV file was created but is empty!")
         else:
             logging.error("CSV file was not created!")
-            return False
-
-        # Set file permissions
-        try:
-            os.chmod(CSV_FILE_PATH, 0o777)
-            logging.info(f"Set permissions 777 for {CSV_FILE_PATH}")
-        except Exception as e:
-            logging.warning(f"Could not set file permissions: {e}")
+            raise HTTPException(status_code=500, detail="CSV file creation failed!")
 
         # Load into memory and verify
         global cities_data
@@ -162,13 +163,13 @@ def load_txt_to_csv():
             # Verify data was actually loaded
             if cities_data.empty:
                 logging.error("DataFrame is empty after loading CSV!")
-                return False
+                raise HTTPException(status_code=500, detail="CSV loaded but DataFrame is empty!")
                 
             return True
             
         except Exception as e:
             logging.error(f"Error loading CSV into memory: {e}")
-            return False
+            raise HTTPException(status_code=500, detail=f"Error loading CSV: {str(e)}")
 
     except Exception as e:
         logging.error(f"Error in load_txt_to_csv: {e}")
@@ -256,8 +257,7 @@ async def lifespan(app: FastAPI):
     qa_model = None
     tokenizer = None
     cities_data = None
-    logging.info("All resources cleaned up")
-    logging.info("=== Application Shutdown Complete ===")
+    logging.info("Models and data cleared, shutdown complete.")
 
 # FastAPI app setup
 app = FastAPI(
