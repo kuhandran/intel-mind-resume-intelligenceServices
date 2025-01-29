@@ -213,7 +213,12 @@ async def root():
 def convert():
     """API endpoint to trigger conversion."""
     success = convert_txt_to_csv()
+    
     if success:
+        # Log the success messages before returning the response
+        logger.info("CSV file created successfully.")
+        logger.info(f"CSV file path: {CSV_FILE_PATH}")
+        
         return JSONResponse(
             content={
                 "message": "CSV file created successfully.",
@@ -222,6 +227,10 @@ def convert():
             status_code=200,
         )
     else:
+        # Log the error
+        logger.error("Failed to create CSV file.")
+        
         return JSONResponse(
-            content={"error": "Failed to create CSV file."}, status_code=500
+            content={"error": "Failed to create CSV file."}, 
+            status_code=500
         )
