@@ -52,6 +52,7 @@ def load_city_country_data(file_path: str):
 
     except Exception as e:
         logging.error(f"Error loading cities data from {file_path}: {e}")
+        raise e  # Re-raise the exception to be handled in the API
 
 # Helper function to search for cities and countries in the input text
 def search_locations_in_text(text: str) -> List[str]:
@@ -82,6 +83,11 @@ async def extract_locations(payload: LocationPayload) -> LocationResponse:
         else:
             raise HTTPException(status_code=404, detail="No locations found in the text")  # Return error if no locations found
 
+    except HTTPException as http_exc:
+        # Log the HTTPException with details and raise it again
+        logging.error(f"HTTPException occurred: {http_exc.detail}")
+        raise http_exc
     except Exception as e:
+        # Log the generic exception details and raise a 500 error
         logging.error(f"Error while processing request: {e}")
         raise HTTPException(status_code=500, detail="Error extracting locations")
