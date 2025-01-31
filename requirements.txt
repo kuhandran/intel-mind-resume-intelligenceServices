@@ -8,3 +8,4 @@ spacy==3.7.4
 pydantic
 pandas==1.5.3
 aiofiles
+onnxruntime

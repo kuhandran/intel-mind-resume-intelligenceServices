@@ -9,6 +9,12 @@ import csv
 import pandas as pd
 from fastapi.responses import JSONResponse
 import aiofiles
+import torch
+from transformers import pipeline
+import onnxruntime
+from transformers.onnx import export
+from transformers import AutoTokenizer, AutoModelForQuestionAnswering
+from pathlib import Path
 
 # Import the routers for the APIs from the 'functions' folder
 from functions.text_generation import router as text_gen_router
@@ -41,6 +47,7 @@ countries_data = None
 # Lazy load models
 qa_model = None
 tokenizer = None
+onnx_session = None
 
 # Define file paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -112,10 +119,43 @@ async def convert_txt_to_csv():
     return False
 
 
+def quantize_model(model):
+    """Quantize the model to reduce memory usage."""
+    quantized_model = torch.quantization.quantize_dynamic(
+        model, {torch.nn.Linear}, dtype=torch.qint8
+    )
+    return quantized_model
+
+
+def export_to_onnx(model, tokenizer, output_dir):
+    """Export the model to ONNX format."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Export the model
+    onnx_path = output_dir / "model.onnx"
+    export(
+        model=model,
+        tokenizer=tokenizer,
+        feature="question-answering",
+        opset=12,
+        output=onnx_path,
+    )
+    return onnx_path
+
+
+def create_onnx_session(onnx_path):
+    """Create an ONNX Runtime session for inference."""
+    options = onnxruntime.SessionOptions()
+    options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+    session = onnxruntime.InferenceSession(str(onnx_path), options)
+    return session
+
+
 # Context manager for model loading and cleanup
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global qa_model, tokenizer, cities_data
+    global qa_model, tokenizer, onnx_session, cities_data
 
     logging.info("=== Starting Application Initialization ===")
 
@@ -134,7 +174,7 @@ async def lifespan(app: FastAPI):
     logging.info("Step 2: Loading ML models...")
     try:
         # Load question-answering model
-        model_name = "distilbert-base-cased-distilled-squad"
+        model_name = "deepset/roberta-base-squad2"
 
         logging.info(f"Loading tokenizer from {model_name}...")
         tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=CACHE_DIR)
@@ -143,10 +183,23 @@ async def lifespan(app: FastAPI):
         qa_model = AutoModelForQuestionAnswering.from_pretrained(
             model_name, cache_dir=CACHE_DIR
         )
+
+        # Quantize the model to reduce memory usage
+        logging.info("Quantizing the model...")
+        qa_model = quantize_model(qa_model)
+
+        # Export the model to ONNX format
+        logging.info("Exporting the model to ONNX format...")
+        onnx_path = export_to_onnx(qa_model, tokenizer, output_dir="./onnx")
+
+        # Create an ONNX Runtime session
+        logging.info("Creating ONNX Runtime session...")
+        onnx_session = create_onnx_session(onnx_path)
+
         logging.info("ML models loaded successfully")
 
         # Verify models are loaded
-        if qa_model is None or tokenizer is None:
+        if qa_model is None or tokenizer is None or onnx_session is None:
             raise ValueError("Models failed to load properly")
 
     except Exception as e:
@@ -163,6 +216,7 @@ async def lifespan(app: FastAPI):
     - Cities Shape: {cities_data.shape if cities_data is not None else 'N/A'}
     - Tokenizer: {tokenizer is not None}
     - QA Model: {qa_model is not None}
+    - ONNX Session: {onnx_session is not None}
     """
     )
 
@@ -172,14 +226,15 @@ async def lifespan(app: FastAPI):
     logging.info("=== Starting Application Shutdown ===")
     qa_model = None
     tokenizer = None
+    onnx_session = None
     cities_data = None
     logging.info("Models and data cleared, shutdown complete.")
 
 
 # FastAPI app setup
 app = FastAPI(
-    title="Intel Mind Resume Intelligence Services",
-    description="API for text generation, location extraction, and skill extraction",
+    title="DeepSeek Resume Intelligence Services",
+    description="API for text generation, location extraction, and skill extraction using DeepSeek",
     version="1.0.0",
     lifespan=lifespan,
 )
