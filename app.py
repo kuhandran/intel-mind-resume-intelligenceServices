@@ -35,7 +35,7 @@ app = FastAPI(
 )
 
 # Register the main API router
-app.include_router(api_router)
+app.include_router(api_router, prefix="/api")
 
 # CORS middleware setup
 app.add_middleware(

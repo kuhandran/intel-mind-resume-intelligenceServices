@@ -37,22 +37,33 @@ def export_model_to_onnx():
         # Ensure the ONNX directory exists
         ONNX_DIR.mkdir(parents=True, exist_ok=True)
 
+        # Load the model from HuggingFace transformers
         model = AutoModelForQuestionAnswering.from_pretrained(MODEL_NAME)
-        
+
         # Create dummy input for export
         dummy_input = {
-            "input_ids": torch.randint(0, 1000, (1, 512)),  # Example input
-            "attention_mask": torch.ones(1, 512),
+            "input_ids": torch.randint(0, 1000, (1, 512)),  # Example input with size 512
+            "attention_mask": torch.ones(1, 512),  # Attention mask of ones with size 512
         }
-        
-        # Export the model
+
+        # Ensure the model is in evaluation mode
+        model.eval()
+
+        # Export the model to ONNX format
         torch.onnx.export(
             model,
             (dummy_input["input_ids"], dummy_input["attention_mask"]),
-            str(ONNX_PATH),
-            input_names=["input_ids", "attention_mask"],
-            output_names=["start_logits", "end_logits"],
-            opset_version=14,
+            str(ONNX_PATH),  # Path to save the ONNX model
+            input_names=["input_ids", "attention_mask"],  # Names for the input nodes
+            output_names=["start_logits", "end_logits"],  # Names for the output nodes
+            opset_version=14,  # ONNX opset version
+            do_constant_folding=True,  # Enable constant folding for optimizations
+            dynamic_axes={
+                "input_ids": {0: "batch_size", 1: "sequence_length"},  # Dynamic batch and sequence length
+                "attention_mask": {0: "batch_size", 1: "sequence_length"},
+                "start_logits": {0: "batch_size", 1: "sequence_length"},
+                "end_logits": {0: "batch_size", 1: "sequence_length"},
+            },  # Allow dynamic batch and sequence lengths
         )
         logging.info(f"Model exported successfully to {ONNX_PATH}")
     except Exception as e:
@@ -78,23 +89,17 @@ default_context = "Welcome to IntelMind! I am an advanced AI here to assist with
 def get_answer(question: str, context: str = None) -> str:
     """Get answer from model based on the question and context."""
     context = context or default_context
-    
-    # Handle simple greetings and farewells
-    greetings = ['hi', 'hello', 'hey', 'greetings', 'morning', 'evening', 'yo']
-    farewells = ['bye', 'goodbye', 'see you', 'later']
 
-    if any(g in question.lower() for g in greetings):
-        return random.choice(["Hello! How can I assist you?", "Hi there! Need help?", "Greetings! What can I do for you?"])
-    
-    if any(f in question.lower() for f in farewells):
-        return "Goodbye! It was a pleasure assisting you."
-
-    # Tokenize input
-    inputs = tokenizer(question, context, return_tensors="pt", padding=True, truncation=True, max_length=512)
+    # Tokenize input using the tokenizer
+    inputs = tokenizer(question, context, return_tensors="pt", padding='max_length', truncation=True, max_length=512)
 
     # Convert inputs to numpy arrays for ONNX Runtime
     input_ids = inputs["input_ids"].cpu().numpy()
     attention_mask = inputs["attention_mask"].cpu().numpy()
+
+    # Ensure the input size matches expected dimensions
+    if input_ids.shape[1] != 512:
+        raise HTTPException(status_code=400, detail="Input question exceeds token limit.")
 
     # Run inference using ONNX Runtime
     ort_inputs = {"input_ids": input_ids, "attention_mask": attention_mask}
