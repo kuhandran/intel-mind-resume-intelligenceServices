@@ -1,10 +1,11 @@
 import logging
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from transformers import AutoTokenizer, GPT2ForQuestionAnswering
 import torch
 import random
-import re
+import onnxruntime
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from transformers import AutoModelForQuestionAnswering, AutoTokenizer
+from pathlib import Path
 
 # Set up the router for Text Generation API endpoint
 router = APIRouter()
@@ -18,113 +19,110 @@ class TextPayload(BaseModel):
 class TextResponse(BaseModel):
     response: str
 
-# Initialize the tokenizer and model for question answering
-try:
-    # Load tokenizer and model for question answering
-    tokenizer = AutoTokenizer.from_pretrained("openai-community/gpt2")
-    model = GPT2ForQuestionAnswering.from_pretrained("openai-community/gpt2")
+# Logging setup
+logging.basicConfig(level=logging.INFO)
 
-    logging.info("Model initialized successfully.")
-except Exception as e:
-    logging.error(f"Error initializing model: {e}")
-    raise HTTPException(status_code=500, detail="Error initializing model")
+# Initialize the tokenizer and ONNX session for question answering
+MODEL_NAME = "deepset/roberta-base-squad2"
+ONNX_DIR = Path("./onnx")
+ONNX_PATH = ONNX_DIR / "roberta-qa.onnx"
 
-# Default context in case no context is provided in the request
+# Initialize the tokenizer globally
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+
+def export_model_to_onnx():
+    """Exports the RoBERTa model to ONNX format."""
+    logging.info("Exporting RoBERTa model to ONNX format...")
+    try:
+        # Ensure the ONNX directory exists
+        ONNX_DIR.mkdir(parents=True, exist_ok=True)
+
+        model = AutoModelForQuestionAnswering.from_pretrained(MODEL_NAME)
+        
+        # Create dummy input for export
+        dummy_input = {
+            "input_ids": torch.randint(0, 1000, (1, 512)),  # Example input
+            "attention_mask": torch.ones(1, 512),
+        }
+        
+        # Export the model
+        torch.onnx.export(
+            model,
+            (dummy_input["input_ids"], dummy_input["attention_mask"]),
+            str(ONNX_PATH),
+            input_names=["input_ids", "attention_mask"],
+            output_names=["start_logits", "end_logits"],
+            opset_version=14,
+        )
+        logging.info(f"Model exported successfully to {ONNX_PATH}")
+    except Exception as e:
+        logging.error(f"Error during model export: {e}")
+        raise HTTPException(status_code=500, detail="Error exporting model to ONNX")
+
+def create_onnx_session():
+    """Creates and returns an ONNX Runtime session."""
+    options = onnxruntime.SessionOptions()
+    options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+    return onnxruntime.InferenceSession(str(ONNX_PATH), options)
+
+# Ensure model export if ONNX path does not exist
+if not ONNX_PATH.exists():
+    export_model_to_onnx()
+
+# Create ONNX session
+onnx_session = create_onnx_session()
+
+# Default context
 default_context = "Welcome to IntelMind! I am an advanced AI here to assist with processing and understanding professional profiles."
 
-# Helper function to get the answer from the model
 def get_answer(question: str, context: str = None) -> str:
-    # Use default context if no context is provided or context is empty
+    """Get answer from model based on the question and context."""
     context = context or default_context
     
-    # If context is an empty string, ignore and use the default context
-    if context == "":
-        context = default_context
-    
-    # Process greetings with dynamic responses
+    # Handle simple greetings and farewells
     greetings = ['hi', 'hello', 'hey', 'greetings', 'morning', 'evening', 'yo']
-    farewell = ['bye', 'goodbye', 'see you', 'later']
-    
-    # If it's a greeting, respond with dynamic variations
-    if any(greeting in question.lower() for greeting in greetings):
-        responses = [
-            "Hello! Welcome to IntelMind. How can I assist you today?",
-            "Hi there! How can I help you at IntelMind?",
-            "Greetings! How can I assist you with your queries today?",
-            "Of course! Welcome to IntelMind. What can I help you with?"
-        ]
-        return random.choice(responses)
-    
-    # If it's a farewell, respond dynamically
-    if any(farewell in question.lower() for farewell in farewell):
-        return "Goodbye! It was a pleasure assisting you. Come back anytime!"
-    
-    # Analyze yes/no questions with dynamic responses
-    yes_no_phrases = ['is', 'are', 'can', 'do']
-    if any(question.lower().startswith(yn_phrase) for yn_phrase in yes_no_phrases):
-        responses = [
-            "Yes, let me check that for you.",
-            "Certainly! I'll look into that right away.",
-            "That's an interesting question! Let me analyze it for you."
-        ]
-        return random.choice(responses)
-    
-    # Enhanced name detection using multiple patterns
-    # Expanded pattern for recognizing names with different references
-    name_patterns = [
-        r"my name is (\w+)",  # "my name is John"
-        r"i am (\w+)",  # "I am John"
-        r"call me (\w+)",  # "Call me Mike"
-        r"everyone calls me (\w+)",  # "Everyone calls me Mike"
-        r"my full name is (\w+ \w+)",  # "My full name is John Doe"
-        r"people usually refer to me as (\w+)",  # "People usually refer to me as Mike"
-        r"i'm (\w+)",  # "I'm John"
-        r"my [a-zA-Z]+ call me (\w+)",  # Generic pattern "my [person] calls me [name]"
-        r"my [a-zA-Z]+ refer to me as (\w+)",  # "My [person] refers to me as [name]"
-        r"everyone [a-zA-Z]+ calls me (\w+)",  # "Everyone [person] calls me [name]"
-        r"people [a-zA-Z]+ call me (\w+)",  # "People [person] call me [name]"
-    ]
-    
-    # Try each pattern and check if it matches
-    for pattern in name_patterns:
-        match = re.search(pattern, question.lower())
-        if match:
-            name = match.group(1).capitalize()
-            return f"Nice to meet you, {name}! How can I assist you today?"
+    farewells = ['bye', 'goodbye', 'see you', 'later']
 
-    # If the question seems complex or not a greeting, process it with AI
-    inputs = tokenizer(question, context, return_tensors="pt")
+    if any(g in question.lower() for g in greetings):
+        return random.choice(["Hello! How can I assist you?", "Hi there! Need help?", "Greetings! What can I do for you?"])
     
-    with torch.no_grad():
-        outputs = model(**inputs)
+    if any(f in question.lower() for f in farewells):
+        return "Goodbye! It was a pleasure assisting you."
 
-    answer_start_index = outputs.start_logits.argmax()
-    answer_end_index = outputs.end_logits.argmax()
+    # Tokenize input
+    inputs = tokenizer(question, context, return_tensors="pt", padding=True, truncation=True, max_length=512)
 
-    # Extracting the answer tokens
-    answer_tokens = inputs.input_ids[0, answer_start_index: answer_end_index + 1]
+    # Convert inputs to numpy arrays for ONNX Runtime
+    input_ids = inputs["input_ids"].cpu().numpy()
+    attention_mask = inputs["attention_mask"].cpu().numpy()
+
+    # Run inference using ONNX Runtime
+    ort_inputs = {"input_ids": input_ids, "attention_mask": attention_mask}
+    ort_outputs = onnx_session.run(None, ort_inputs)
+
+    # Extract start and end logits
+    start_logits, end_logits = ort_outputs
+
+    # Find the most probable start and end positions for the answer
+    answer_start = start_logits.argmax()
+    answer_end = end_logits.argmax()
+
+    # Decode the answer tokens
+    answer_tokens = input_ids[0, answer_start: answer_end + 1]
     answer = tokenizer.decode(answer_tokens, skip_special_tokens=True)
 
-    # Provide a default response if the model doesn't provide an answer
-    if not answer.strip():
-        return "I'm not sure I understood your question fully. Could you please clarify?"
+    return answer if answer.strip() else "I'm not sure I understood your question fully. Can you clarify?"
 
-    return answer
-
-# Endpoint for text generation using GPT-2 (Question Answering)
+# Endpoint for text generation using RoBERTa (Question Answering)
 @router.post("/generate_text/", response_model=TextResponse)
 async def generate_text(payload: TextPayload) -> TextResponse:
     try:
         logging.info(f"Received question: {payload.question}")
 
-        # Get the answer based on the provided context or fallback to the default context
+        # Get the answer based on the provided context
         answer = get_answer(payload.question, payload.context)
-        
-        # If an answer is found, return it, else return a default message
-        if answer.strip():
-            return TextResponse(response=answer)
-        else:
-            return TextResponse(response="No specific answer found based on the provided context.")
+
+        return TextResponse(response=answer)
     except Exception as e:
         logging.error(f"Error generating text: {e}")
         raise HTTPException(status_code=500, detail="Error generating text")
