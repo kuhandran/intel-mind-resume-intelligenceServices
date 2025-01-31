@@ -2,7 +2,8 @@ import logging
 import torch
 import onnxruntime
 from transformers import AutoTokenizer
-from services.utils import create_onnx_session
+from services.utils import create_onnx_session ,export_to_onnx
+from pathlib import Path
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
@@ -10,14 +11,28 @@ logging.basicConfig(level=logging.INFO)
 # Directories and model info
 CACHE_DIR = "./cache"
 MODEL_NAME = "deepset/roberta-base-squad2"
+ONNX_DIR = Path("onnx")
+ONNX_PATH = ONNX_DIR / "roberta-qa.onnx"
+
+from transformers import AutoModelForQuestionAnswering
 
 def load_models():
     """Loads the tokenizer and ONNX session."""
     logging.info("Loading tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, cache_dir=CACHE_DIR)
     
+    # Define the ONNX model path
+    onnx_path = Path(CACHE_DIR) / "onnx" / "roberta-qa.onnx"
+
+    # If the ONNX model doesn't exist, export it
+    if not onnx_path.exists():
+        logging.info("ONNX model not found, exporting...")
+        # Load the pre-trained model
+        model = AutoModelForQuestionAnswering.from_pretrained(MODEL_NAME)
+        export_to_onnx(model, onnx_path)  # Export the model to ONNX format
+
     logging.info("Creating ONNX session...")
-    onnx_session = create_onnx_session()
+    onnx_session = create_onnx_session(onnx_path)  # Now, load the ONNX session
     
     return tokenizer, onnx_session
 

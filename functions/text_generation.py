@@ -1,7 +1,7 @@
 import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from models import get_answer  # Importing from models.py
+from services.inference import get_answer  # Importing from models.py
 
 # Set up the router for Text Generation API endpoint
 router = APIRouter()
