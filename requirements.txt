@@ -1,12 +1,12 @@
 fastapi==0.95.1
 uvicorn==0.18.2
-transformers
-torch
+transformers==4.28.1
+torch==2.0.1
 numpy<2.0
-huggingface-hub
+huggingface-hub==0.16.4
 spacy==3.7.4
-pydantic
+pydantic==1.10.2
 pandas==1.5.3
-aiofiles
-onnx  # Add ONNX support for exporting models
-onnxruntime  # Add ONNX runtime for model inference
+aiofiles==0.8.0
+onnx==1.14.0
+onnxruntime==1.15.0
