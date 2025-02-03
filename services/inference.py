@@ -1,12 +1,12 @@
 import logging
 import numpy as np
-from services.model_loader import tokenizer, onnx_session  # Importing from model_loader
+from services.model_loader import tokenizer, model  # Importing from model_loader
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
 
 def get_answer(question: str, context: str = "Welcome to IntelMind!"):
-    """Uses the ONNX model to generate an answer for the given question."""
+    """Uses the loaded model to generate an answer for the given question."""
     try:
         prompt = f"Question: {question}\nContext: {context}\nAnswer:"
         logging.info(f"Generated prompt: {prompt}")
@@ -14,17 +14,11 @@ def get_answer(question: str, context: str = "Welcome to IntelMind!"):
         # Tokenize inputs
         inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=512)
 
-        input_ids = inputs["input_ids"].cpu().numpy()  # Moving input to CPU and converting to numpy
-        attention_mask = inputs["attention_mask"].cpu().numpy()
-
-        ort_inputs = {"input_ids": input_ids, "attention_mask": attention_mask}
-        
-        # Run the ONNX model
-        ort_outputs = onnx_session.run(None, ort_inputs)
-        generated_ids = ort_outputs[0]  # Assuming first output is the generated token IDs
+        # Forward pass through the model
+        outputs = model.generate(input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"])
 
         # Decode the generated token IDs to string
-        answer = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
+        answer = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
         logging.info(f"Generated answer: {answer}")
 

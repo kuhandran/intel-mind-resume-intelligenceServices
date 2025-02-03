@@ -1,6 +1,5 @@
 import logging
 import torch
-import onnxruntime
 from pathlib import Path
 
 def setup_logging():
@@ -12,6 +11,7 @@ def quantize_model(model):
     """Quantizes a model for reduced memory usage using float16 precision."""
     model.half()  # Convert model weights to float16 for better efficiency
     return model
+
 
 def export_to_onnx(model, onnx_path):
     """Exports the model to ONNX format if not already present."""
@@ -62,16 +62,3 @@ def export_to_onnx(model, onnx_path):
         raise e
 
     return onnx_path
-
-def create_onnx_session(onnx_path):
-    """Creates and returns an optimized ONNX Runtime session."""
-    options = onnxruntime.SessionOptions()
-    options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
-
-    if not onnx_path.exists():
-        raise FileNotFoundError(
-            f"ONNX model not found at {onnx_path}. Ensure it's exported first."
-        )
-
-    session = onnxruntime.InferenceSession(str(onnx_path), options)
-    return session
