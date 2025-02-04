@@ -7,7 +7,7 @@ logging.basicConfig(level=logging.INFO)
 
 # Configuration
 CACHE_DIR = Path("./cache")
-MODEL_NAME = "google/flan-t5-small"  # Use generative model
+MODEL_NAME = "google/flan-t5-base"  # Use generative model
 
 def load_models():
     """Loads the tokenizer and model."""
